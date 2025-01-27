@@ -65,44 +65,7 @@ from batchgeneratorsv2.transforms.utils.remove_label import RemoveLabelTansform
 from batchgeneratorsv2.transforms.utils.seg_to_regions import (
     ConvertSegmentationToRegionsTransform,
 )
-from torch import autocast, nn
-from torch import distributed as dist
-from torch._dynamo import OptimizedModule
-from torch.cuda import device_count
-from torch.cuda.amp import GradScaler
-from torch.nn.parallel import DistributedDataParallel as DDP
-
-from nnunetv2.configuration import ANISO_THRESHOLD, default_num_processes
-from nnunetv2.evaluation.evaluate_predictions import compute_metrics_on_folder
-from nnunetv2.inference.export_prediction import (
-    export_prediction_from_logits,
-    resample_and_save,
-)
-from nnunetv2.inference.predict_from_raw_data import nnUNetPredictor
-from nnunetv2.inference.sliding_window_prediction import compute_gaussian
-from nnunetv2.paths import nnUNet_preprocessed, nnUNet_results
-from nnunetv2.training.data_augmentation.compute_initial_patch_size import (
-    get_patch_size,
-)
-from nnunetv2.training.dataloading.data_loader_2d import nnUNetDataLoader2D
-from nnunetv2.training.dataloading.data_loader_3d import nnUNetDataLoader3D
-from nnunetv2.training.dataloading.nnunet_dataset import nnUNetDataset
-from nnunetv2.training.dataloading.utils import get_case_identifiers, unpack_dataset
-from nnunetv2.training.logging.nnunet_logger import nnUNetLogger
-from nnunetv2.training.loss.compound_losses import DC_and_BCE_loss, DC_and_CE_loss
-from nnunetv2.training.loss.deep_supervision import DeepSupervisionWrapper
-from nnunetv2.training.loss.dice import MemoryEfficientSoftDiceLoss, get_tp_fp_fn_tn
-from nnunetv2.training.lr_scheduler.polylr import PolyLRScheduler
-from nnunetv2.utilities.collate_outputs import collate_outputs
-from nnunetv2.utilities.crossval_split import generate_crossval_split
-from nnunetv2.utilities.default_n_proc_DA import get_allowed_n_proc_DA
-from nnunetv2.utilities.file_path_utilities import check_workers_alive_and_busy
-from nnunetv2.utilities.get_network_from_plans import get_network_from_plans
-from nnunetv2.utilities.helpers import dummy_context, empty_cache
-from nnunetv2.utilities.label_handling.label_handling import (
-    convert_labelmap_to_one_hot,
-    determine_num_input_channels,
-)
+from torch import autocast
 from torch import distributed as dist
 from torch import nn
 from torch._dynamo import OptimizedModule
@@ -140,44 +103,6 @@ from nnunetv2.utilities.helpers import dummy_context, empty_cache
 from nnunetv2.utilities.label_handling.label_handling import (
     convert_labelmap_to_one_hot,
     determine_num_input_channels,
-)
-from nnunetv2.utilities.plans_handling.plans_handler import PlansManager
-
-
-class nnUNetTrainer(object):
-    def __init__(
-        self,
-        plans: dict,
-        configuration: str,
-        fold: int,
-        dataset_json: dict,
-        unpack_dataset: bool = True,
-        device: torch.device = torch.device("cuda"),
-    ):
-        # From https://grugbrain.dev/. Worth a read ya big brains ;-)
-
-        # apex predator of grug is complexity
-        # complexity bad
-        # say again:
-        # complexity very bad
-        # you say now:
-        # complexity very, very bad
-        # given choice between complexity or one on one against t-rex, grug take t-rex: at least grug see t-rex
-        # complexity is spirit demon that enter codebase through well-meaning but ultimately very clubbable non grug-brain developers and project managers who not fear complexity spirit demon or even know about sometime
-        # one day code base understandable and grug can get work done, everything good!
-        # next day impossible: complexity demon spirit has entered code and very dangerous situation!
-
-        # OK OK I am guilty. But I tried.
-        # https://www.osnews.com/images/comics/wtfm.jpg
-        # https://i.pinimg.com/originals/26/b2/50/26b250a738ea4abc7a5af4d42ad93af0.jpg
-
-        self.is_ddp = dist.is_available() and dist.is_initialized()
-        self.local_rank = 0 if not self.is_ddp else dist.get_rank()
-
-        self.device = device
-
-        # print what device we are using
-        if self.is_ddp:  # implicitly it's clear that we use cuda in this case
             print(
                 f"I am local rank {self.local_rank}. {device_count()} GPUs are available. The world size is "
                 f"{dist.get_world_size()}."
@@ -258,7 +183,7 @@ class nnUNetTrainer(object):
         self.oversample_foreground_percent = 0.33
         self.num_iterations_per_epoch = 250
         self.num_val_iterations_per_epoch = 50
-        self.num_epochs = 1000
+        self.num_epochs = 300
         self.current_epoch = 0
         self.enable_deep_supervision = True
 
