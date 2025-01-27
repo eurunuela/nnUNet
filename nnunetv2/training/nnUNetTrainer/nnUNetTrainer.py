@@ -65,9 +65,8 @@ from batchgeneratorsv2.transforms.utils.remove_label import RemoveLabelTansform
 from batchgeneratorsv2.transforms.utils.seg_to_regions import (
     ConvertSegmentationToRegionsTransform,
 )
-from torch import autocast
+from torch import autocast, nn
 from torch import distributed as dist
-from torch import nn
 from torch._dynamo import OptimizedModule
 from torch.cuda import device_count
 from torch.cuda.amp import GradScaler
@@ -103,6 +102,44 @@ from nnunetv2.utilities.helpers import dummy_context, empty_cache
 from nnunetv2.utilities.label_handling.label_handling import (
     convert_labelmap_to_one_hot,
     determine_num_input_channels,
+)
+from nnunetv2.utilities.plans_handling.plans_handler import PlansManager
+
+
+class nnUNetTrainer(object):
+    def __init__(
+        self,
+        plans: dict,
+        configuration: str,
+        fold: int,
+        dataset_json: dict,
+        unpack_dataset: bool = True,
+        device: torch.device = torch.device("cuda"),
+    ):
+        # From https://grugbrain.dev/. Worth a read ya big brains ;-)
+
+        # apex predator of grug is complexity
+        # complexity bad
+        # say again:
+        # complexity very bad
+        # you say now:
+        # complexity very, very bad
+        # given choice between complexity or one on one against t-rex, grug take t-rex: at least grug see t-rex
+        # complexity is spirit demon that enter codebase through well-meaning but ultimately very clubbable non grug-brain developers and project managers who not fear complexity spirit demon or even know about sometime
+        # one day code base understandable and grug can get work done, everything good!
+        # next day impossible: complexity demon spirit has entered code and very dangerous situation!
+
+        # OK OK I am guilty. But I tried.
+        # https://www.osnews.com/images/comics/wtfm.jpg
+        # https://i.pinimg.com/originals/26/b2/50/26b250a738ea4abc7a5af4d42ad93af0.jpg
+
+        self.is_ddp = dist.is_available() and dist.is_initialized()
+        self.local_rank = 0 if not self.is_ddp else dist.get_rank()
+
+        self.device = device
+
+        # print what device we are using
+        if self.is_ddp:  # implicitly it's clear that we use cuda in this case
             print(
                 f"I am local rank {self.local_rank}. {device_count()} GPUs are available. The world size is "
                 f"{dist.get_world_size()}."
